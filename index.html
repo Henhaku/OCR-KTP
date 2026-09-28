@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OCR Kartu Identitas (Offline)</title>
+    <!-- Memuat Tesseract.js dari CDN untuk pemrosesan OCR di browser -->
+    <script src="https://unpkg.com/tesseract.js@v5.1.0/dist/tesseract.min.js"></script>
+    <style>
+        :root {
+            --primary-color: #2563eb;
+            --bg-color: #f8fafc;
+            --card-bg: #ffffff;
+            --text-color: #1e293b;
+            --border-color: #cbd5e1;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 600px;
+            background: var(--card-bg);
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+        }
+
+        h2 {
+            margin-top: 0;
+            font-size: 1.5rem;
+            color: var(--primary-color);
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .upload-section {
+            border: 2px dashed var(--border-color);
+            padding: 20px;
+            text-align: center;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            background-color: #f1f5f9;
+        }
+
+        .upload-section input[type="file"] {
+            margin-bottom: 10px;
+        }
+
+        .preview-container {
+            margin-top: 10px;
+            max-height: 200px;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+        }
+
+        .preview-container img {
+            max-width: 100%;
+            max-height: 180px;
+            border-radius: 4px;
+            object-fit: contain;
+        }
+
+        button.btn-process {
+            width: 100%;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 12px;
+            font-size: 1rem;
+            font-weight: 600;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        button.btn-process:hover {
+            background-color: #1d4ed8;
+        }
+
+        button.btn-process:disabled {
+            background-color: var(--border-color);
+            cursor: not-allowed;
+        }
+
+        .result-section {
+            margin-top: 24px;
+            border-top: 1px solid var(--border-color);
+            padding-top: 16px;
+            display: none;
+        }
+
+        .result-section h3 {
+            font-size: 1.1rem;
+            margin-bottom: 12px;
+        }
+
+        .result-grid {
+            display: grid;
+            grid-template-columns: 140px 1fr;
+            gap: 8px 12px;
+            font-size: 0.95rem;
+        }
+
+        .result-grid .label {
+            font-weight: 600;
+            color: #64748b;
+        }
+
+        .loading {
+            text-align: center;
+            font-style: italic;
+            color: #64748b;
+            margin-top: 15px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h2>OCR Kartu Identitas (Offline)</h2>
+        
+        <!-- Bagian Input File -->
+        <div class="upload-section">
+            <input type="file" id="idCardImageInput" accept="image/*" capture="environment" onchange="previewImage(event)">
+            <p style="font-size: 0.85rem; color: #64748b; margin: 5px 0 0 0;">Unggah atau ambil foto KTP/SIM Anda</p>
+            <div class="preview-container" id="imagePreviewContainer"></div>
+        </div>
+
+        <!-- Tombol Proses -->
+        <button class="btn-process" id="processBtn" onclick="processIDCardOCR()" disabled>Proses Ekstraksi Data</button>
+
+        <!-- Indikator Loading -->
+        <div class="loading" id="loadingIndicator">Sedang memindai teks secara lokal... Mohon tunggu.</div>
+
+        <!-- Bagian Hasil Ekstraksi -->
+        <div class="result-section" id="resultSection">
+            <h3>Hasil Deteksi Identitas:</h3>
+            <div class="result-grid">
+                <div class="label">NIK</div>
+                <div>: <span id="resNik">-</span></div>
+                
+                <div class="label">Nama</div>
+                <div>: <span id="resNama">-</span></div>
+                
+                <div class="label">Tempat/Tgl Lahir</div>
+                <div>: <span id="resTtl">-</span></div>
+                
+                <div class="label">Jenis Kelamin</div>
+                <div>: <span id="resJk">-</span></div>
+                
+                <div class="label">Alamat</div>
+                <div>: <span id="resAlamat">-</span></div>
+                
+                <div class="label">Agama</div>
+                <div>: <span id="resAgama">-</span></div>
+                
+                <div class="label">Status Perkawinan</div>
+                <div>: <span id="resStatus">-</span></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Menampilkan pratinjau gambar saat dipilih
+        function previewImage(event) {
+            const file = event.target.files[0];
+            const previewContainer = document.getElementById('imagePreviewContainer');
+            previewContainer.innerHTML = '';
+
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const img = document.createElement('img');
+                    img.src = e.target.result;
+                    previewContainer.appendChild(img);
+                }
+                reader.readAsDataURL(file);
+                document.getElementById('processBtn').disabled = false;
+            } else {
+                document.getElementById('processBtn').disabled = true;
+            }
+        }
+
+        // Parser teks menggunakan Regular Expressions (Regex) standar KTP Indonesia
+        function parseKtpText(rawText) {
+            const cleanedText = rawText.replace(/O/g, '0').replace(/I/g, '1').replace(/l/g, '1');
+
+            const nikMatch = cleanedText.match(/\b(3[1-7|7-9]\d{14})\b/);
+            const namaMatch = cleanedText.match(/Nama\s*[:;]?\s*([A-Z\s]+)/i);
+            const ttlMatch = cleanedText.match(/(?:Tempat\/Tgl Lahir|Lahir)\s*[:;]?\s*([A-Za-z\s]+,\s*\d{2}-\d{2}-\d{4})/i);
+            const jenisKelaminMatch = cleanedText.match(/(?:Jenis Kelamin|Kelamin)\s*[:;]?\s*([A-Z]+)/i);
+            const alamatMatch = cleanedText.match(/Alamat\s*[:;]?\s*([A-Za-z0-9\s,\.]+?)(?=\n|RT|RW|Kel|Kec|$)/i);
+            const agamaMatch = cleanedText.match(/Agama\s*[:;]?\s*(ISLAM|KRISTEN|KATOLIK|HINDU|BUDHA|KONGHUCU)/i);
+            const statusMatch = cleanedText.match(/(?:Status Perkawinan|Status)\s*[:;]?\s*(KAWIN|BELUM KAWIN|CERAI)/i);
+
+            return {
+                nik: nikMatch ? nikMatch[1] : "Tidak terdeteksi",
+                nama: namaMatch ? namaMatch[1].trim() : "Tidak terdeteksi",
+                ttl: ttlMatch ? ttlMatch[1].trim() : "Tidak terdeteksi",
+                jenisKelamin: jenisKelaminMatch ? jenisKelaminMatch[1].trim() : "Tidak terdeteksi",
+                alamat: alamatMatch ? alamatMatch[1].trim() : "Tidak terdeteksi",
+                agama: agamaMatch ? agamaMatch[1].trim() : "Tidak terdeteksi",
+                status: statusMatch ? statusMatch[1].trim() : "Tidak terdeteksi"
+            };
+        }
+
+        // Fungsi utama pemrosesan OCR dengan Tesseract.js (berjalan offline di browser)
+        async function processIDCardOCR() {
+            const fileInput = document.getElementById('idCardImageInput');
+            if (fileInput.files.length === 0) {
+                alert("Pilih file gambar terlebih dahulu!");
+                return;
+            }
+
+            const file = fileInput.files[0];
+            const loadingIndicator = document.getElementById('loadingIndicator');
+            const resultSection = document.getElementById('resultSection');
+            const processBtn = document.getElementById('processBtn');
+
+            // Set UI ke status loading
+            loadingIndicator.style.display = 'block';
+            resultSection.style.display = 'none';
+            processBtn.disabled = true;
+
+            try {
+                // Memanggil Tesseract untuk membaca teks bahasa Indonesia ('ind')
+                const { data: { text } } = await Tesseract.recognize(
+                    file,
+                    'ind',
+                    { 
+                        logger: m => console.log(m) // Log progres di konsol browser
+                    }
+                );
+
+                // Jalankan parser lokal untuk menyaring teks mentah
+                const parsedData = parseKtpText(text);
+
+                // Masukkan hasil ke elemen HTML
+                document.getElementById('resNik').innerText = parsedData.nik;
+                document.getElementById('resNama').innerText = parsedData.nama;
+                document.getElementById('resTtl').innerText = parsedData.ttl;
+                document.getElementById('resJk').innerText = parsedData.jenisKelamin;
+                document.getElementById('resAlamat').innerText = parsedData.alamat;
+                document.getElementById('resAgama').innerText = parsedData.agama;
+                document.getElementById('resStatus').innerText = parsedData.status;
+
+                // Tampilkan hasil
+                resultSection.style.display = 'block';
+            } catch (error) {
+                console.error(error);
+                alert("Terjadi kesalahan saat memproses gambar.");
+            } finally {
+                loadingIndicator.style.display = 'none';
+                processBtn.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>
